@@ -1,0 +1,1 @@
+* Figure out a better way to auto-download and install the library files on Windows, 'cause manual install is balls.
