@@ -1,6 +1,7 @@
 extern crate sfml;
 extern crate tui;
 
+mod coffee_types;
 mod file_source;
 mod user_interface;
 
