@@ -1,15 +1,13 @@
 extern crate sfml;
 extern crate tui;
 
-mod audio_layers;
-mod coffee_types;
-mod file_source;
-mod filtered_source;
+mod coffee_audio;
 mod user_interface;
 
 use sfml::audio::{SoundStatus, SoundStreamPlayer};
 
-use audio_layers::{PassthroughLayer, SwapLRLayer};
+use coffee_audio::layers::{PassthroughLayer, SwapLRLayer};
+use coffee_audio::sources::{FileSource, FilteredSource};
 
 use std::error::Error;
 use std::io::Write;
@@ -24,8 +22,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     let default_audio_in_device = sfml::audio::capture::default_device();
     println!("Default Audio Input Device: {}", default_audio_in_device);
 
-    let file_stream = file_source::FileSource::new("resources/stereo_test.ogg");
-    let mut stream = filtered_source::FilteredSource::new(file_stream);
+    let file_stream = FileSource::new("resources/stereo_test.ogg");
+    let mut stream = FilteredSource::new(file_stream);
     stream.add_filter(PassthroughLayer {});
     stream.add_filter(SwapLRLayer {});
     let mut player = SoundStreamPlayer::new(&mut stream);

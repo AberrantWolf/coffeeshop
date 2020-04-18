@@ -1,6 +1,6 @@
 use sfml::audio::SoundStream;
 
-use crate::coffee_types::{AudioChunk, AudioLayer};
+use crate::coffee_audio::types::{AudioChunk, AudioLayer};
 
 pub struct FilteredSource<S: SoundStream> {
     base: Box<S>,

@@ -9,4 +9,6 @@ edition = "2018"
 [dependencies]
 sfml = "*"
 crossterm = "0.14"
+structopt = "0.3"
+tokio = "0.2"
 tui = { version = "0.8", default-features = false, features = ['crossterm'] }

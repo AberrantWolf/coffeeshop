@@ -3,7 +3,7 @@ use std::fmt;
 use sfml::audio::SoundBuffer;
 use sfml::audio::SoundStream;
 
-use crate::coffee_types::AudioChunk;
+use crate::coffee_audio::types::AudioChunk;
 
 const SAMPLES_PER_CHUNK: usize = 20000;
 
