@@ -27,8 +27,16 @@ impl AudioChunk {
         self.channel_count
     }
 
+    pub fn set_channel_count(&mut self, count: u32) {
+        self.channel_count = count
+    }
+
     pub fn sample_rate(&self) -> u32 {
         self.sample_rate
+    }
+
+    pub fn set_sample_rate(&mut self, rate: u32) {
+        self.sample_rate = rate
     }
 
     pub fn buffer(&self) -> &Vec<i16> {
@@ -42,6 +50,6 @@ impl AudioChunk {
 
 /// An AudioLayer takes an AudioChunk as input and modifies the chunk.
 /// Your original data is lost/changed by this process
-trait AudioLayer {
-    fn modulate_chunk(chunk: &mut AudioChunk);
+pub trait AudioLayer {
+    fn modulate_chunk(&mut self, chunk: &mut AudioChunk);
 }
