@@ -1,93 +1,70 @@
-use std::{
-    error::Error,
-    io::{stdout, Write},
-    sync::mpsc,
-    thread,
-    time::Duration,
-};
+use cursive::views::{Button, LinearLayout, TextContent, TextView};
+use cursive::Cursive;
 
-use tui::backend::CrosstermBackend;
-use tui::layout::{Constraint, Direction, Layout};
-use tui::widgets::{Block, Borders, Widget};
-use tui::Terminal;
+use std::net::SocketAddr;
+use std::sync::{Arc, Mutex};
 
-use crossterm::{
-    event::{self, Event as CEvent, KeyCode},
-    execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
-};
+use tokio::net::TcpListener;
 
-enum Event<I> {
-    Input(I),
-    Tick,
+use crate::coffee_network::ui::ChatView;
+
+struct MainUiState {
+    chat_view: Arc<Mutex<ChatView>>,
+    val: usize,
+    connect_text: TextContent,
+    port_text: TextContent,
+    counter: TextContent,
 }
 
-pub fn run_ui() -> Result<(), Box<dyn Error>> {
-    enable_raw_mode()?;
+impl MainUiState {}
 
-    let mut stdout = stdout();
-    execute!(stdout, EnterAlternateScreen)?;
+pub async fn start_ui() {
+    let mut siv = Cursive::default();
 
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
-    terminal.hide_cursor()?;
+    let app_state = Arc::new(Mutex::new(MainUiState {
+        chat_view: Arc::new(Mutex::new(ChatView::new(&mut siv))),
+        val: 0usize,
+        connect_text: TextContent::new("<connect text>"),
+        port_text: TextContent::new("<ip address>"),
+        counter: TextContent::new("0"),
+    }));
+    let listen_addr = SocketAddr::from(([127, 0, 0, 1], 0));
 
-    // Setup input handling
-    let (tx, rx) = mpsc::channel();
-    thread::spawn(move || {
-        loop {
-            // poll for tick rate duration, if no events, sent tick event.
-            if event::poll(Duration::from_millis(250)).unwrap() {
-                if let CEvent::Key(key) = event::read().unwrap() {
-                    tx.send(Event::Input(key)).unwrap();
-                }
+    {
+        let app_state = app_state.clone();
+        tokio::spawn(async move {
+            let mut listener = TcpListener::bind(&listen_addr).await.unwrap();
+            app_state
+                .lock()
+                .unwrap()
+                .port_text
+                .set_content(format!("{}", listener.local_addr().unwrap()));
+            loop {
+                let (_stream, addr) = listener.accept().await.unwrap();
+                let state = app_state.lock().unwrap();
+                state.connect_text.set_content(format!("{}", addr));
             }
-
-            tx.send(Event::Tick).unwrap();
-        }
-    });
-
-    loop {
-        let result = terminal.draw(|mut f| {
-            let chunks = Layout::default()
-                .direction(Direction::Vertical)
-                .margin(1)
-                .constraints(
-                    [
-                        Constraint::Percentage(10),
-                        Constraint::Percentage(80),
-                        Constraint::Percentage(10),
-                    ]
-                    .as_ref(),
-                )
-                .split(f.size());
-            Block::default()
-                .title("Block")
-                .borders(Borders::ALL)
-                .render(&mut f, chunks[0]);
-            Block::default()
-                .title("Block 2")
-                .borders(Borders::ALL)
-                .render(&mut f, chunks[2]);
         });
-        match result {
-            Ok(_) => {}
-            Err(_) => break,
-        }
-
-        match rx.recv()? {
-            Event::Input(event) => match event.code {
-                KeyCode::Char('q') => {
-                    disable_raw_mode()?;
-                    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
-                    terminal.show_cursor()?;
-                    break;
-                }
-                _ => {}
-            },
-            _ => {}
-        }
     }
 
-    Ok(())
+    siv.set_user_data(app_state.clone());
+    {
+        let app_state = app_state.lock().unwrap();
+        siv.add_layer(
+            LinearLayout::vertical()
+                .child(TextView::new_with_content(app_state.connect_text.clone()))
+                .child(TextView::new_with_content(app_state.port_text.clone()))
+                .child(TextView::new_with_content(app_state.counter.clone()))
+                .child(Button::new("Increment", |s| {
+                    s.with_user_data(|data: &mut Arc<Mutex<MainUiState>>| {
+                        let mut ui_state = data.lock().unwrap();
+                        ui_state.val += 1;
+                        ui_state.counter.set_content(format!("{}", ui_state.val));
+                    });
+                })),
+        );
+    }
+    siv.add_global_callback('q', |s| s.quit());
+
+    siv.run();
 }
