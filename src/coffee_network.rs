@@ -2,21 +2,30 @@ pub mod ui;
 
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
+
+use tokio::io::{ReadHalf, WriteHalf};
 use tokio::net::{TcpListener, TcpStream};
+
+use tokio::prelude::*;
 
 pub struct PeerInfo {
     stream: TcpStream,
     address: SocketAddr,
 }
 
+struct PeerContainer<T> {
+    tx: WriteHalf<T>,
+    address: SocketAddr,
+}
+
 #[derive(Default)]
 pub struct NetworkStateInner {
     address: Option<SocketAddr>,
-    peers: Vec<PeerInfo>,
+    peers: Vec<PeerContainer<TcpStream>>,
 }
 
 impl NetworkStateInner {
-    fn add_peer(&mut self, info: PeerInfo) {
+    fn add_peer(&mut self, info: PeerContainer<TcpStream>) {
         self.peers.push(info);
     }
 
@@ -30,12 +39,12 @@ impl PeerInfo {
         PeerInfo { stream, address }
     }
 
-    fn get_stream(&mut self) -> &mut TcpStream {
-        &mut self.stream
+    fn get_stream(self) -> TcpStream {
+        self.stream
     }
 
-    fn get_address(&self) -> &SocketAddr {
-        &self.address
+    fn get_address(&self) -> SocketAddr {
+        self.address
     }
 }
 
@@ -70,11 +79,26 @@ pub fn start_server(state: NetworkState, mut cb: Box<dyn FnMut(&PeerInfo) + Send
 }
 
 fn process_new_peer(state: NetworkState, peer: PeerInfo) {
+    let address = peer.get_address();
+    let stream = peer.get_stream();
+    let (mut rx, tx) = tokio::io::split(stream);
+
+    let peer = PeerContainer { tx, address };
     state.lock().unwrap().add_peer(peer);
 
     tokio::spawn(async move {
+        let mut buf = [0u8; 1024];
         loop {
-            // Listen for incoming messages
+            let read = rx.read(&mut buf).await;
+            let count = match read {
+                Ok(c) => c,
+                Err(_) => {
+                    return;
+                }
+            };
+            if count > 0 {
+                // TODO: do something with the contents of buf...
+            }
         }
     });
 }
