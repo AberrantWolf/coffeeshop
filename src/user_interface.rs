@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 
 use tokio::net::TcpListener;
 
-use crate::coffee_network::{self, ui::ChatView, NetworkState};
+use crate::coffee_network::{self, ui::ChatView};
 
 struct MainUiState {
     chat_view: Arc<Mutex<ChatView>>,
@@ -40,7 +40,7 @@ pub async fn start_ui() {
         counter: TextContent::new("0"),
     }));
 
-    let network_state = NetworkState::default();
+    let network_state = coffee_network::create_network();
     coffee_network::start_server(network_state.clone(), Box::new(move |peer| {}));
 
     // siv.set_user_data(app_state.clone());
