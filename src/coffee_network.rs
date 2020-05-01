@@ -1,10 +1,8 @@
 pub mod ui;
 
-use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 
-use tokio::io::{ReadHalf, WriteHalf};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{broadcast, mpsc};
 
@@ -15,12 +13,8 @@ pub struct PeerInfo {
     address: SocketAddr,
 }
 
-struct PeerContainer<T> {
-    tx: WriteHalf<T>,
-    address: SocketAddr,
-}
-
-enum Message {
+#[derive(Clone)]
+pub enum Message {
     Ping,
     Connect(SocketAddr),
     Disconnect(SocketAddr),
@@ -28,46 +22,42 @@ enum Message {
     VoiceChat(SocketAddr, Vec<u8>),
 }
 
-pub struct NetworkStateInner {
+struct NetworkStateInner {
     address: SocketAddr,
-    peers: HashMap<SocketAddr, PeerContainer<TcpStream>>,
     // Broadcase for sending messages OUT from the network state
     broadcast_tx: broadcast::Sender<Message>,
-    broadcast_rx: broadcast::Receiver<Message>,
+    // broadcast_rx: broadcast::Receiver<Message>,
     // MPSC for sending messages INTO the network state
     mpsc_tx: mpsc::Sender<Message>,
     // mpsc_rx: mpsc::Receiver<Message>,
 }
 
 impl NetworkStateInner {
-    fn add_peer(&mut self, info: PeerContainer<TcpStream>) {
-        self.peers.insert(info.address, info);
-    }
-
     fn get_address(&self) -> SocketAddr {
-        self.address.clone()
+        self.address
     }
 
     fn get_to_server_tx(&self) -> mpsc::Sender<Message> {
         self.mpsc_tx.clone()
     }
 
+    fn get_from_server_rx(&self) -> broadcast::Receiver<Message> {
+        self.broadcast_tx.subscribe()
+    }
+
     fn handle_message(&mut self, msg: Message) {
-        match msg {
-            Message::Ping => unimplemented!(),
-            Message::Connect(addr) => unimplemented!(),
-            Message::Disconnect(addr) => unimplemented!(),
-            Message::TextChat(addr, text) => unimplemented!(),
-            Message::VoiceChat(addr, byte_vec) => unimplemented!(),
+        // TODO: do we need to do any processing of the message?
+
+        // Rebroadcast all messages (for now) to all listeners
+        if self.broadcast_tx.send(msg).is_err() {
+            // TODO: report error somehow
         }
     }
+
+    // TODO: on drop, broadcast a shutdown message and close all channels
 }
 
 impl PeerInfo {
-    fn new(stream: TcpStream, address: SocketAddr) -> Self {
-        PeerInfo { stream, address }
-    }
-
     fn get_stream(self) -> TcpStream {
         self.stream
     }
@@ -77,60 +67,101 @@ impl PeerInfo {
     }
 }
 
-type NetworkState = Arc<Mutex<NetworkStateInner>>;
-// TODO: this doesn't need to be separate from the `start_server` function
-pub fn create_network() -> NetworkState {
-    let (btx, brx) = broadcast::channel::<Message>(16);
-    let (mtx, mut mrx) = mpsc::channel::<Message>(100);
-
-    let state = Arc::new(Mutex::new(NetworkStateInner {
-        address: SocketAddr::from(([127, 0, 0, 1], 0)),
-        peers: HashMap::new(),
-        broadcast_tx: btx, // clonable, can send across threads
-        broadcast_rx: brx, // not clonable -- make new from a sender
-        mpsc_tx: mtx,      // clonable
-    }));
-
-    // Initiate async loop to receive
-    let result_state = state.clone();
-    tokio::spawn(async move {
-        loop {
-            if let Some(msg) = mrx.recv().await {
-                state.lock().unwrap().handle_message(msg);
-            }
-        }
-    });
-
-    result_state
+#[derive(Clone)]
+pub struct NetworkState {
+    inner: Arc<Mutex<NetworkStateInner>>,
 }
 
-pub fn start_server(state: NetworkState, mut cb: Box<dyn FnMut(&PeerInfo) + Send>) {
-    // Spawn process to listen for new network connections
-    tokio::spawn(async move {
-        let address = state.lock().unwrap().get_address();
-        let mut listener = TcpListener::bind(address).await.unwrap();
-        loop {
-            let (stream, address) = listener.accept().await.unwrap();
-            let peer_info = PeerInfo { stream, address };
-            cb(&peer_info);
-
-            let state = state.clone();
-            process_new_peer(state, peer_info);
+impl NetworkState {
+    fn new_from_inner(inner: NetworkStateInner) -> Self {
+        NetworkState {
+            inner: Arc::new(Mutex::new(inner)),
         }
+    }
+
+    fn lock_ref(&self) -> std::sync::MutexGuard<NetworkStateInner> {
+        // TODO: handle lock errors (what causes a lock error?)
+        self.inner.lock().unwrap()
+    }
+
+    fn start_mpsc(&self, mut mrx: mpsc::Receiver<Message>) {
+        let state = self.clone();
+        tokio::spawn(async move {
+            loop {
+                if let Some(msg) = mrx.recv().await {
+                    state.lock_ref().handle_message(msg);
+                }
+            }
+        });
+    }
+
+    fn start_tcp(&self) {
+        let state = self.clone();
+        tokio::spawn(async move {
+            let address = state.lock_ref().get_address();
+            let mut listener = TcpListener::bind(address).await.unwrap();
+            loop {
+                let (stream, address) = listener.accept().await.unwrap();
+                let peer_info = PeerInfo { stream, address };
+
+                let state = state.clone();
+                process_new_peer(state, peer_info);
+            }
+        });
+    }
+
+    // TODO: Don't be a scrub, return a Result<?, ?>...
+    pub fn connect_to(&self, address: &'static str, port: u16) {
+        let state = self.clone();
+        tokio::spawn(async move {
+            if let Ok(address) = address.parse() {
+                if let Ok(stream) = TcpStream::connect(address).await {
+                    process_new_peer(state, PeerInfo { stream, address });
+                } else {
+                    // TODO: report an error somewhere...
+                }
+            }
+        });
+    }
+
+    pub fn get_server_sender(&self) -> mpsc::Sender<Message> {
+        self.lock_ref().get_to_server_tx()
+    }
+
+    pub fn get_broadcast_receiver(&self) -> broadcast::Receiver<Message> {
+        self.lock_ref().get_from_server_rx()
+    }
+}
+
+pub fn create_network() -> NetworkState {
+    let (btx, _brx) = broadcast::channel::<Message>(16);
+    let (mtx, mrx) = mpsc::channel::<Message>(100);
+
+    let state = NetworkState::new_from_inner(NetworkStateInner {
+        address: SocketAddr::from(([127, 0, 0, 1], 0)),
+        broadcast_tx: btx, // clonable, can send across threads
+        mpsc_tx: mtx,      // clonable
     });
+
+    // Initiate async loop to receive on MPSC channel
+    state.start_mpsc(mrx);
+
+    // Initiate async loop to accept remote connections
+    state.start_tcp();
+
+    state
 }
 
 fn process_new_peer(state: NetworkState, peer: PeerInfo) {
     let address = peer.get_address();
     let stream = peer.get_stream();
-    let (mut rx, tx) = tokio::io::split(stream);
+    let (mut rx, mut tx) = tokio::io::split(stream);
 
-    // TODO: I think I can remove the peer tracking unless I want to
-    // be able to query specifically how many peers there are...?
-    let peer = PeerContainer { tx, address };
-    state.lock().unwrap().add_peer(peer);
+    // TODO: create a UDP connection with this peer for sending/receiving
+    // audio data
 
-    let mut server_tx = state.lock().unwrap().get_to_server_tx();
+    // Initiate async peer listen loop
+    let mut server_tx = state.get_server_sender();
     tokio::spawn(async move {
         let mut buf = [0u8; 1024];
         loop {
@@ -142,7 +173,8 @@ fn process_new_peer(state: NetworkState, peer: PeerInfo) {
                 }
             };
             if count > 0 {
-                // TODO: do something with the contents of buf...
+                // TODO: maybe need to wait for a null terminator and
+                // break messages apart?
                 let msg = Message::TextChat(
                     address,
                     std::str::from_utf8(&buf[..count]).unwrap().to_owned(),
@@ -152,12 +184,33 @@ fn process_new_peer(state: NetworkState, peer: PeerInfo) {
                 }
             }
         }
-        // TODO: ...remove from the network state...?
-        // (requires clone of address, though)
+
+        // Send the server a message that we are disconnecting
+        if let Err(_err) = server_tx.send(Message::Disconnect(address)).await {
+            return;
+        }
     });
 
+    // Initiate async broadcast channel loop with peer sendint
     tokio::spawn(async move {
-        // TODO: subscribe to the state's broadcast channel and send
-        // messages back out -- provided that they didn't come from us
+        // Acquire a receiver for the network state's broadcast channel
+        let mut broadcast_rx = state.get_broadcast_receiver();
+        while let Ok(msg) = broadcast_rx.recv().await {
+            match msg {
+                Message::Connect(_) => {}
+                Message::Disconnect(_) => {}
+                Message::Ping => {}
+                Message::TextChat(sender, text) => {
+                    if sender != address && tx.write(text.as_bytes()).await.is_err() {
+                        break;
+                    }
+                }
+                Message::VoiceChat(sender, _bytes) => {
+                    if sender != address {
+                        // TODO: encode and send the data over UDP
+                    }
+                }
+            }
+        }
     });
 }

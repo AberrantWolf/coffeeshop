@@ -3,10 +3,7 @@ use cursive::menu::{MenuItem, MenuTree};
 use cursive::views::{Button, LinearLayout, TextContent, TextView};
 use cursive::Cursive;
 
-use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
-
-use tokio::net::TcpListener;
 
 use crate::coffee_network::{self, ui::ChatView};
 
@@ -32,7 +29,7 @@ pub async fn start_ui() {
         .add_subtree("Network", MenuTree::new().leaf("Connect", move |s| {}));
     siv.set_autohide_menu(false);
 
-    let app_state = Arc::new(Mutex::new(MainUiState {
+    let ui_state = Arc::new(Mutex::new(MainUiState {
         chat_view: Arc::new(Mutex::new(ChatView::new_with_cursive(&mut siv))),
         val: 0usize,
         connect_text: TextContent::new("<connect text>"),
@@ -41,7 +38,6 @@ pub async fn start_ui() {
     }));
 
     let network_state = coffee_network::create_network();
-    coffee_network::start_server(network_state.clone(), Box::new(move |peer| {}));
 
     // siv.set_user_data(app_state.clone());
     // {
