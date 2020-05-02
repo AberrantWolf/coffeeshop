@@ -13,7 +13,7 @@ pub struct PeerInfo {
     address: SocketAddr,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Message {
     Ping,
     Connect(SocketAddr),
@@ -46,11 +46,12 @@ impl NetworkStateInner {
     }
 
     fn handle_message(&mut self, msg: Message) {
+        println!("Handling message: {:?}", msg);
         // TODO: do we need to do any processing of the message?
 
         // Rebroadcast all messages (for now) to all listeners
         if self.broadcast_tx.send(msg).is_err() {
-            // TODO: report error somehow
+            // TODO: report error to a proper logger
         }
     }
 
@@ -100,6 +101,7 @@ impl NetworkState {
         tokio::spawn(async move {
             let address = state.lock_ref().get_address();
             let mut listener = TcpListener::bind(address).await.unwrap();
+            println!("Listener bound: {:?}", listener.local_addr().unwrap());
             loop {
                 let (stream, address) = listener.accept().await.unwrap();
                 let peer_info = PeerInfo { stream, address };
@@ -110,18 +112,24 @@ impl NetworkState {
         });
     }
 
-    // TODO: Don't be a scrub, return a Result<?, ?>...
-    pub fn connect_to(&self, address: &'static str, port: u16) {
+    pub fn connect_to(&self, address: String) {
+        println!("Connecting to: {}", address);
         let state = self.clone();
         tokio::spawn(async move {
             if let Ok(address) = address.parse() {
-                if let Ok(stream) = TcpStream::connect(address).await {
-                    process_new_peer(state, PeerInfo { stream, address });
-                } else {
-                    // TODO: report an error somewhere...
+                match TcpStream::connect(address).await {
+                    Ok(stream) => process_new_peer(state, PeerInfo { stream, address }),
+                    Err(e) => {
+                        // TODO: report an error to a proper logger
+                        println!("Server connection failed: {}, {}", address, e);
+                    }
                 }
             }
         });
+    }
+
+    pub fn get_address(&self) -> SocketAddr {
+        self.lock_ref().get_address()
     }
 
     pub fn get_server_sender(&self) -> mpsc::Sender<Message> {
@@ -131,6 +139,21 @@ impl NetworkState {
     pub fn get_broadcast_receiver(&self) -> broadcast::Receiver<Message> {
         self.lock_ref().get_from_server_rx()
     }
+
+    pub fn send_text_message(&self, text: String) {
+        let net = self.clone();
+        let text = text.clone();
+        tokio::spawn(async move {
+            let mut sender = net.get_server_sender();
+            if let Err(e) = sender
+                .send(Message::TextChat(net.get_address(), text.clone()))
+                .await
+            {
+                println!("Error sending text message: {}", e);
+            }
+            println!("Sent message: {}", text);
+        });
+    }
 }
 
 pub fn create_network() -> NetworkState {
@@ -138,7 +161,7 @@ pub fn create_network() -> NetworkState {
     let (mtx, mrx) = mpsc::channel::<Message>(100);
 
     let state = NetworkState::new_from_inner(NetworkStateInner {
-        address: SocketAddr::from(([127, 0, 0, 1], 0)),
+        address: SocketAddr::from(([0, 0, 0, 0], 22020)),
         broadcast_tx: btx, // clonable, can send across threads
         mpsc_tx: mtx,      // clonable
     });
@@ -153,6 +176,7 @@ pub fn create_network() -> NetworkState {
 }
 
 fn process_new_peer(state: NetworkState, peer: PeerInfo) {
+    println!("Accepting peer: {}", peer.get_address());
     let address = peer.get_address();
     let stream = peer.get_stream();
     let (mut rx, mut tx) = tokio::io::split(stream);
@@ -175,10 +199,9 @@ fn process_new_peer(state: NetworkState, peer: PeerInfo) {
             if count > 0 {
                 // TODO: maybe need to wait for a null terminator and
                 // break messages apart?
-                let msg = Message::TextChat(
-                    address,
-                    std::str::from_utf8(&buf[..count]).unwrap().to_owned(),
-                );
+                let text = std::str::from_utf8(&buf[..count]).unwrap().to_owned();
+                println!("Message received: {}", text);
+                let msg = Message::TextChat(address, text);
                 if let Err(_err) = server_tx.send(msg).await {
                     break;
                 }
