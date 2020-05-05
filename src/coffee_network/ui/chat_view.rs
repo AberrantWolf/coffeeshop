@@ -9,7 +9,6 @@ use crate::coffee_network::{Message, NetworkState};
 
 // Internal-only struct for wrapping the Arc<Mutex<...>> around
 struct ChatViewInner {
-    // TODO: add network state
     chat_content: TextContent, // thread-safe
 }
 
@@ -49,7 +48,7 @@ impl ChatView {
                             }
                             _ => unimplemented!(),
                         },
-                        Err(e) => {
+                        Err(_e) => {
                             // TODO: Log error
                         }
                     }
@@ -78,7 +77,7 @@ impl ChatView {
                 )
             };
             let submit_btn = {
-                let net = net.clone();
+                let net = net;
                 Button::new("Send", move |s| {
                     let net = net.clone();
                     s.call_on_name("message_text_edit", move |view: &mut EditView| {

@@ -1,20 +1,13 @@
-// extern crate sfml;
-// extern crate tui;
-// extern crate cursive;
-
-use tokio::prelude::*;
-
 mod coffee_audio;
 mod coffee_network;
 mod user_interface;
 
-use sfml::audio::{SoundStatus, SoundStreamPlayer};
+// use sfml::audio::{SoundStatus, SoundStreamPlayer};
 
-use coffee_audio::layers::{PassthroughLayer, SwapLRLayer};
-use coffee_audio::sources::{FileSource, FilteredSource};
+// use coffee_audio::layers::{PassthroughLayer, SwapLRLayer};
+// use coffee_audio::sources::{FileSource, FilteredSource};
 
 use std::error::Error;
-use std::io::Write;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {

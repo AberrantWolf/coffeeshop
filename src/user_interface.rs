@@ -17,7 +17,7 @@ struct MainUiState {
 impl MainUiState {}
 
 pub async fn start_ui() {
-    let network_state = coffee_network::create_network();
+    let network_state = coffee_network::NetworkState::new();
 
     // Initialize the main Cursive controller
     let mut siv = Cursive::default();
