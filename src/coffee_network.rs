@@ -39,6 +39,7 @@ pub struct NetworkState {
 
 impl NetworkState {
     pub fn new() -> Self {
+        const PORT_NUM: u16 = 0;
         let (btx, _brx) = broadcast::channel::<Message>(16);
         let (mtx, mrx) = mpsc::channel::<Message>(100);
         let state = NetworkState {
@@ -46,7 +47,7 @@ impl NetworkState {
             broadcast_tx: btx,
             mpsc_tx: mtx,
             inner: Arc::new(Mutex::new(InnerNetworkState {
-                address: SocketAddr::from(([0, 0, 0, 0], 22020)),
+                address: SocketAddr::from(([0, 0, 0, 0], PORT_NUM)),
                 peers: vec![],
             })),
         };
@@ -92,12 +93,18 @@ impl NetworkState {
             let mut listener = TcpListener::bind(address).await.unwrap();
             if let Ok(address) = listener.local_addr() {
                 state.set_address(address);
-            }
-            println!("Listener bound: {:?}", address);
-            loop {
-                let (stream, address) = listener.accept().await.unwrap();
-                let state = state.clone();
-                process_new_peer(state, address, stream);
+                println!("Listener bound: {:?}", address);
+                loop {
+                    let (mut stream, address) = listener.accept().await.unwrap();
+                    let state = state.clone();
+
+                    let bytes = bincode::serialize(&state.info).unwrap();
+                    if stream.write(&bytes).await.is_ok() {
+                        process_new_peer(state, address, stream);
+                    }
+                }
+            } else {
+                println!("Error binding network listener");
             }
         });
     }
@@ -112,7 +119,11 @@ impl NetworkState {
                         if let Ok(v) = bincode::serialize::<PeerInfo>(&state.info) {
                             if stream.write(&v).await.is_ok() {
                                 process_new_peer(state, address, stream);
+                            } else {
+                                println!("Error writing handshake data on tcp stream");
                             }
+                        } else {
+                            println!("Error serializing handshake info");
                         }
                     }
                     Err(e) => {
