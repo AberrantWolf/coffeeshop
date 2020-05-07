@@ -38,16 +38,15 @@ pub struct NetworkState {
 }
 
 impl NetworkState {
-    pub fn new() -> Self {
-        const PORT_NUM: u16 = 0;
+    pub fn new_with_port_and_username(port_num: u16, username: String) -> Self {
         let (btx, _brx) = broadcast::channel::<Message>(16);
         let (mtx, mrx) = mpsc::channel::<Message>(100);
         let state = NetworkState {
-            info: PeerInfo::new(Uuid::new_v4(), "Test".to_string()),
+            info: PeerInfo::new(Uuid::new_v4(), username),
             broadcast_tx: btx,
             mpsc_tx: mtx,
             inner: Arc::new(Mutex::new(InnerNetworkState {
-                address: SocketAddr::from(([0, 0, 0, 0], PORT_NUM)),
+                address: SocketAddr::from(([0, 0, 0, 0], port_num)),
                 peers: vec![],
             })),
         };
