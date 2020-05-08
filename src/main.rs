@@ -1,6 +1,7 @@
+mod coffee_app;
 mod coffee_audio;
 mod coffee_network;
-mod user_interface;
+mod coffee_ui;
 
 // use sfml::audio::{SoundStatus, SoundStreamPlayer};
 
@@ -14,7 +15,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     println!("Hello, world!");
 
     // XXX: I'm playing with UI stuff, so just ignore this for now...
-    user_interface::start_ui().await;
+    coffee_ui::start_ui();
 
     // Show the default audio input device so we know we have something, at least
     // let default_audio_in_device = sfml::audio::capture::default_device();

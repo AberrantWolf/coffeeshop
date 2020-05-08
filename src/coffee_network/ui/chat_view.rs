@@ -5,7 +5,7 @@ use cursive::view::Scrollable;
 use cursive::views::{Button, EditView, LinearLayout, Panel, ResizedView, TextContent, TextView};
 use cursive::Cursive;
 
-use crate::coffee_network::{Message, NetworkState};
+use crate::coffee_network::{Message, NetworkController};
 
 // Internal-only struct for wrapping the Arc<Mutex<...>> around
 struct ChatViewInner {
@@ -28,7 +28,7 @@ impl ChatView {
 }
 
 impl ChatView {
-    pub fn new(siv: &mut Cursive, net: NetworkState) -> Self {
+    pub fn new(siv: &mut Cursive, net: NetworkController) -> Self {
         let cv = ChatView {
             inner: Arc::new(Mutex::new(ChatViewInner {
                 chat_content: TextContent::new("[new chat started]\n"),
@@ -37,8 +37,9 @@ impl ChatView {
 
         {
             let cv = cv.clone();
-            let mut receiver = net.get_broadcast_receiver();
+            let net = net.clone();
             tokio::spawn(async move {
+                let mut receiver = net.get_broadcast_receiver().await;
                 loop {
                     match receiver.recv().await {
                         Ok(msg) => match msg {

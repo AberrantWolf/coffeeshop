@@ -1,9 +1,9 @@
-use crate::coffee_network::NetworkState;
+use crate::coffee_network::NetworkController;
 use cursive::traits::*;
 use cursive::views::{Button, Dialog, EditView, LinearLayout, ResizedView, TextContent, TextView};
 use cursive::Cursive;
 
-pub fn launch_info_dialog(siv: &mut Cursive, net: NetworkState) {
+pub fn launch_info_dialog(siv: &mut Cursive, net: NetworkController) {
     let address_content = TextContent::new("[loading]");
     tokio::spawn({
         let content = address_content.clone();
@@ -22,7 +22,7 @@ pub fn launch_info_dialog(siv: &mut Cursive, net: NetworkState) {
     );
 }
 
-pub fn launch_connect_dialog(siv: &mut Cursive, net: NetworkState) {
+pub fn launch_connect_dialog(siv: &mut Cursive, net: NetworkController) {
     let address_layout = {
         let net = net.clone();
         LinearLayout::horizontal()

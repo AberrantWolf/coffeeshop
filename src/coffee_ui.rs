@@ -1,15 +1,13 @@
 use cursive::event::Event;
-use cursive::menu::{MenuItem, MenuTree};
+use cursive::menu::MenuTree;
 use cursive::traits::*;
-use cursive::views::{Button, Dialog, EditView, LinearLayout, ResizedView, TextContent, TextView};
+use cursive::views::{Button, Dialog, EditView, LinearLayout, ResizedView, TextView};
 use cursive::Cursive;
 
 use std::sync::{Arc, Mutex};
 
-use crate::coffee_network::{
-    self,
-    ui::{self, ChatView},
-};
+use crate::coffee_app::CoffeeAppContext;
+use crate::coffee_network::ui::{self, ChatView};
 
 struct MainUiState {
     chat_view: Arc<Mutex<ChatView>>,
@@ -17,8 +15,7 @@ struct MainUiState {
 
 impl MainUiState {}
 
-// TODO: Does this need to be async?
-pub async fn start_ui() {
+pub fn start_ui() {
     // Create a starup dialog...
     let mut siv = Cursive::default();
     siv.set_fps(5);
@@ -40,10 +37,10 @@ pub async fn start_ui() {
                 println!("Couldn't parse port number: {}", port_string);
             }
         });
-        let network_state =
-            coffee_network::NetworkState::new_with_port_and_username(port_num, username);
         s.pop_layer();
-        launch_main_view(s, network_state)
+        // Construct the main app context binding and launch the main UI
+        let coffee_app = CoffeeAppContext::construct(port_num, username);
+        launch_main_view(s, coffee_app);
     };
     let username_line = LinearLayout::horizontal()
         .child(TextView::new("Nickname:"))
@@ -87,10 +84,13 @@ pub async fn start_ui() {
     siv.run();
 }
 
-fn launch_main_view(mut siv: &mut Cursive, network_state: coffee_network::NetworkState) {
+fn launch_main_view(mut siv: &mut Cursive, coffee_app: CoffeeAppContext) {
     // Initialize the main Cursive controller
     let ui_state = Arc::new(Mutex::new(MainUiState {
-        chat_view: Arc::new(Mutex::new(ChatView::new(&mut siv, network_state.clone()))),
+        chat_view: Arc::new(Mutex::new(ChatView::new(
+            &mut siv,
+            coffee_app.get_net_controller().clone(),
+        ))),
     }));
 
     // Create menu
@@ -100,15 +100,15 @@ fn launch_main_view(mut siv: &mut Cursive, network_state: coffee_network::Networ
 
         let mut network_menu = MenuTree::new();
         {
-            let network_state = network_state.clone();
+            let net = coffee_app.get_net_controller().clone();
             network_menu.add_leaf("Info", move |s| {
-                ui::launch_info_dialog(s, network_state.clone());
+                ui::launch_info_dialog(s, net.clone());
             });
         }
         {
-            let network_state = network_state;
+            let net = coffee_app.get_net_controller().clone();
             network_menu.add_leaf("Connect", move |s| {
-                ui::launch_connect_dialog(s, network_state.clone())
+                ui::launch_connect_dialog(s, net.clone())
             });
         }
 

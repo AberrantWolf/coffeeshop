@@ -3,10 +3,10 @@ use std::error::Error;
 use std::sync::Arc;
 use tokio::net::TcpStream;
 use tokio::prelude::*;
-use tokio::sync::Mutex;
+use tokio::sync::RwLock;
 use uuid::Uuid;
 
-use crate::coffee_network::{Message, NetworkState};
+use crate::coffee_network::{Message, NetworkController};
 
 #[derive(Serialize, Debug, Deserialize, Clone, Eq, PartialEq, Hash)]
 pub struct PeerInfo {
@@ -27,7 +27,7 @@ impl PeerInfo {
 #[derive(Clone, Debug)]
 pub struct Peer {
     info: PeerInfo,
-    tcp_stream: Arc<Mutex<TcpStream>>,
+    tcp_stream: Arc<RwLock<TcpStream>>,
 }
 
 impl Peer {
@@ -41,22 +41,22 @@ impl Peer {
 
         Ok(Peer {
             info,
-            tcp_stream: Arc::new(Mutex::new(tcp_stream)),
+            tcp_stream: Arc::new(RwLock::new(tcp_stream)),
         })
     }
 
     async fn tcp_read(&mut self, bytes: &mut [u8]) -> io::Result<usize> {
         // println!("trying to read");
-        self.tcp_stream.lock().await.read(bytes).await
+        self.tcp_stream.write().await.read(bytes).await
     }
 
     async fn tcp_write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-        self.tcp_stream.lock().await.write(bytes).await
+        self.tcp_stream.write().await.write(bytes).await
     }
 
-    pub async fn run(&self, state: NetworkState) {
-        let mut server_tx = state.get_server_sender();
-        let mut broadcast_rx = state.get_broadcast_receiver();
+    pub async fn run(&self, net: NetworkController) {
+        let mut server_tx = net.get_server_sender().await;
+        let mut broadcast_rx = net.get_broadcast_receiver().await;
 
         // TODO: create a UDP connection with this peer for sending/receiving audio data
         // TODO: make separate mpsc/broadcast channels for text/voice comms and subscribe based on client desired capabilities
@@ -82,7 +82,7 @@ impl Peer {
                                 PeerMessage::Ping => {}, // TODO
                                 PeerMessage::Pong => {}, // TODO
                                 PeerMessage::ChatEvent(sender, text) => {
-                                    if sender == state.info.id {
+                                    if sender == net.get_local_peer_info().await.id {
                                         continue;
                                     }
                                     println!("Message received: {}", text);
