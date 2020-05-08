@@ -14,7 +14,12 @@ use std::error::Error;
 async fn main() -> Result<(), Box<dyn Error>> {
     println!("Hello, world!");
 
-    // XXX: I'm playing with UI stuff, so just ignore this for now...
+    // The UI module is in charge of constructing the app context binding.
+    // This is mostly because we need to know username and port number
+    // before starting a server, and the UI shows an initial popup for
+    // that purpose. In the future, it would be nice to construct the app
+    // context separately and feed it into the UI instead, but that's
+    // more work on that code than I'm wanting to put in right now.
     coffee_ui::start_ui();
 
     // Show the default audio input device so we know we have something, at least

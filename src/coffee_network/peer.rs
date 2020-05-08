@@ -12,15 +12,23 @@ use crate::coffee_network::{Message, NetworkController};
 pub struct PeerInfo {
     id: Uuid,
     nickname: String,
+    udp_port: u16,
 }
 
 impl PeerInfo {
-    pub fn new(id: Uuid, nickname: String) -> Self {
-        PeerInfo { id, nickname }
+    pub fn new(id: Uuid, nickname: String, udp_port: u16) -> Self {
+        PeerInfo {
+            id,
+            nickname,
+            udp_port,
+        }
     }
 
     pub fn id(&self) -> Uuid {
         self.id
+    }
+    pub fn set_udp_port(&mut self, port: u16) {
+        self.udp_port = port
     }
 }
 
@@ -28,6 +36,7 @@ impl PeerInfo {
 pub struct Peer {
     info: PeerInfo,
     tcp_stream: Arc<RwLock<TcpStream>>,
+    udp_port: u16,
 }
 
 impl Peer {
@@ -42,6 +51,7 @@ impl Peer {
         Ok(Peer {
             info,
             tcp_stream: Arc::new(RwLock::new(tcp_stream)),
+            // TODO: UDP port goes here...
         })
     }
 
@@ -77,11 +87,11 @@ impl Peer {
                     if count > 0 {
                         // TODO: maybe need to wait for a null terminator and
                         // break messages apart?
-                        if let Ok(peer_message) = bincode::deserialize::<PeerMessage>(&buf[..count]) {
+                        if let Ok(peer_message) = bincode::deserialize::<PeerMessageTcp>(&buf[..count]) {
                             match peer_message {
-                                PeerMessage::Ping => {}, // TODO
-                                PeerMessage::Pong => {}, // TODO
-                                PeerMessage::ChatEvent(sender, text) => {
+                                PeerMessageTcp::Ping => {}, // TODO
+                                PeerMessageTcp::Pong => {}, // TODO
+                                PeerMessageTcp::ChatEvent(sender, text) => {
                                     if sender == net.get_local_peer_info().await.id {
                                         continue;
                                     }
@@ -107,7 +117,7 @@ impl Peer {
                                 Message::_Connect(_) => {}
                                 Message::Disconnect(_) => {}
                                 Message::TextChat(sender, text) => {
-                                    let peer_message = PeerMessage::ChatEvent(sender, text);
+                                    let peer_message = PeerMessageTcp::ChatEvent(sender, text);
                                     if let Ok(bytes) = bincode::serialize(&peer_message) {
                                         if sender != peer.info.id && peer.tcp_write(&bytes).await.is_err() {
                                             println!("Error sending text chat");
@@ -139,7 +149,7 @@ impl Peer {
 }
 
 #[derive(Deserialize, Serialize, Clone)]
-enum PeerMessage {
+enum PeerMessageTcp {
     Ping,
     Pong,
     ChatEvent(Uuid, String),
