@@ -5,13 +5,12 @@ mod peer;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use tokio::net::{TcpListener, TcpStream, UdpSocket};
-use tokio::prelude::*;
+use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{broadcast, mpsc, RwLock};
 
 use uuid::Uuid;
 
-use self::peer::{Peer, PeerInfo};
+use self::peer::Peer;
 
 #[derive(Clone, Debug)]
 pub enum Message {
@@ -24,7 +23,8 @@ pub enum Message {
 #[derive(Debug)]
 struct NetworkControllerPrivate {
     address: SocketAddr,
-    info: PeerInfo,
+    local_id: Uuid,
+    local_nick: String,
     // Broadcase for sending messages OUT from the network state
     broadcast_tx: broadcast::Sender<Message>,
     // MPSC for sending messages INTO the network state
@@ -44,7 +44,8 @@ impl NetworkController {
         let state = NetworkController {
             inner: Arc::new(RwLock::new(NetworkControllerPrivate {
                 address: SocketAddr::from(([0, 0, 0, 0], port_num)),
-                info: PeerInfo::new(Uuid::new_v4(), username, 0),
+                local_id: Uuid::new_v4(),
+                local_nick: username,
                 broadcast_tx: btx,
                 mpsc_tx: mtx,
                 peers: vec![],
@@ -67,6 +68,16 @@ impl NetworkController {
     async fn handle_message(&mut self, msg: Message) {
         println!("Handling message: {:?}", msg);
         // TODO: do we need to do any processing of the message?
+        match msg {
+            Message::_Connect(_) => {}
+            Message::Disconnect(_) => {}
+            Message::TextChat(sender, _) => {
+                if sender == self.get_local_id().await {
+                    return;
+                }
+            }
+            Message::_VoiceChat(_, _) => {}
+        }
 
         // Rebroadcast all messages (for now) to all listeners
         if self.inner.read().await.broadcast_tx.send(msg).is_err() {
@@ -85,43 +96,14 @@ impl NetworkController {
         });
     }
 
-    fn start_udp_server(&self) {
-        let mut net = self.clone();
-        tokio::spawn(async move {
-            let mut address = net.get_address().await;
-            address.set_port(0);
-            let mut udp = UdpSocket::bind(address).await.unwrap();
-            match udp.local_addr() {
-                Ok(address) => {
-                    net.inner.write().await.info.set_udp_port(address.port());
-                    println!("UDP Listener bound: {:?}", address);
-                }
-                Err(e) => {
-                    println!("Error binding UDP listener: {}", e);
-                    return;
-                }
-            }
-            let mut buf = [0; 1024];
-            loop {
-                match udp.recv(&mut buf).await {
-                    Ok(size) => {}
-                    Err(e) => {
-                        println!("Error receiving UDP: {}", e);
-                        return;
-                    }
-                }
-            }
-        });
-    }
-
     fn start_tcp_server(&self) {
-        let mut state = self.clone();
+        let state = self.clone();
         tokio::spawn(async move {
             let address = state.get_address().await;
             let mut listener = TcpListener::bind(address).await.unwrap();
             match listener.local_addr() {
                 Ok(address) => {
-                    state.set_address(address);
+                    state.set_address(address).await;
                     println!("TCP Listener bound: {:?}", address);
                 }
                 Err(e) => {
@@ -130,41 +112,23 @@ impl NetworkController {
                 }
             }
             loop {
-                let (mut stream, address) = listener.accept().await.unwrap();
+                let (stream, address) = listener.accept().await.unwrap();
                 let state = state.clone();
 
-                let bytes = bincode::serialize(&state.inner.read().await.info).unwrap();
-                if stream.write(&bytes).await.is_ok() {
-                    process_new_peer(state, address, stream);
-                }
+                println!("Accepting incoming peer: {}", address);
+                process_new_peer(state, stream);
             }
         });
     }
 
-    pub fn connect_to(&self, address: String) {
-        println!("Connecting to: {}", address);
+    pub fn connect_to(&self, address_string: String) {
+        println!("Connecting to: {}", address_string);
         let state = self.clone();
         tokio::spawn(async move {
-            if let Ok(address) = address.parse() {
+            if let Ok(address) = address_string.parse::<SocketAddr>() {
                 match TcpStream::connect(address).await {
-                    Ok(mut stream) => {
-                        // TODO: Move the write into the peer, because Peer is going
-                        // to be opening a UDP port as well, and that needs to be
-                        // part of the handshake.
-                        if let Ok(v) =
-                            bincode::serialize::<PeerInfo>(&state.inner.read().await.info)
-                        {
-                            // TODO: Spawn a UDP connection exclusively for this peer,
-                            // pass in the address as part of a handshake message and then
-                            // move it into the process_new_peer function.
-                            if stream.write(&v).await.is_ok() {
-                                process_new_peer(state.clone(), address, stream);
-                            } else {
-                                println!("Error writing handshake data on tcp stream");
-                            }
-                        } else {
-                            println!("Error serializing handshake info");
-                        }
+                    Ok(stream) => {
+                        process_new_peer(state.clone(), stream);
                     }
                     Err(e) => {
                         // TODO: report an error to a proper logger
@@ -177,16 +141,19 @@ impl NetworkController {
         });
     }
 
-    pub async fn get_local_peer_info(&self) -> PeerInfo {
-        self.inner.read().await.info.clone()
+    pub async fn get_local_id(&self) -> Uuid {
+        self.inner.read().await.local_id
+    }
+
+    pub async fn get_local_nick(&self) -> String {
+        self.inner.read().await.local_nick.clone()
     }
 
     pub async fn get_address(&self) -> SocketAddr {
         self.inner.read().await.address
     }
-    fn set_address(&mut self, address: SocketAddr) {
-        let net = self.clone();
-        tokio::spawn(async move { net.inner.write().await.address = address });
+    async fn set_address(&self, address: SocketAddr) {
+        self.inner.write().await.address = address;
     }
 
     pub async fn get_server_sender(&self) -> mpsc::Sender<Message> {
@@ -202,10 +169,7 @@ impl NetworkController {
         tokio::spawn(async move {
             let mut sender = net.get_server_sender().await;
             if let Err(e) = sender
-                .send(Message::TextChat(
-                    net.inner.read().await.info.id(),
-                    text.clone(),
-                ))
+                .send(Message::TextChat(net.get_local_id().await, text.clone()))
                 .await
             {
                 println!("Error sending text message: {}", e);
@@ -215,18 +179,15 @@ impl NetworkController {
     }
 }
 
-fn process_new_peer(mut state: NetworkController, addr: SocketAddr, stream: TcpStream) {
-    println!("Accepting peer: {}", addr);
-
+fn process_new_peer(mut net: NetworkController, stream: TcpStream) {
     tokio::spawn(async move {
-        let peer = match Peer::new_from_stream(stream).await {
+        let peer = match Peer::new(stream, net.clone()).await {
             Ok(peer) => peer,
             Err(_e) => {
                 // TODO: Log e somewhere
                 return;
             }
         };
-        state.add_peer(peer.clone()).await;
-        peer.run(state.clone()).await;
+        net.add_peer(peer.clone()).await;
     });
 }
