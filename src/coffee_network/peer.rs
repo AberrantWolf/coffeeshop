@@ -19,6 +19,7 @@ struct PeerInfo {
 struct PeerPrivate {
     tcp_stream: TcpStream,
     udp_socket: UdpSocket,
+    udp_pong_ok: bool,
     broadcast_rx: broadcast::Receiver<Message>,
     server_tx: mpsc::Sender<Message>,
 }
@@ -78,6 +79,7 @@ impl Peer {
             inner: Arc::new(RwLock::new(PeerPrivate {
                 tcp_stream,
                 udp_socket,
+                udp_pong_ok: false,
                 broadcast_rx,
                 server_tx,
             })),
@@ -88,6 +90,14 @@ impl Peer {
     }
 
     // UDP fns
+    async fn is_udp_pong_ok(&self) -> bool {
+        self.inner.read().await.udp_pong_ok
+    }
+
+    async fn set_udp_pong_ok(&mut self) {
+        self.inner.write().await.udp_pong_ok = true
+    }
+
     async fn udp_read(&self, bytes: &mut [u8]) -> io::Result<usize> {
         self.inner.write().await.udp_socket.recv(bytes).await
     }
@@ -97,19 +107,8 @@ impl Peer {
     }
 
     async fn handle_udp_read(&mut self, read: io::Result<usize>, bytes: &[u8]) -> Result<(), ()> {
-        println!("Peer received tcp signal");
-        let count = match read {
-            Ok(c) => c,
-            Err(e) => {
-                println!("Error reading TCP: {}", e);
-                return Err(());
-            }
-        };
-        if count < 1 {
-            return Err(());
-        }
-
-        if let Ok(peer_message) = bincode::deserialize::<PeerMessageUdp>(&bytes[..count]) {
+        println!("Peer received udp signal");
+        if let Ok(peer_message) = PeerMessageUdp::new_from_read(read, &bytes) {
             match peer_message {
                 PeerMessageUdp::Ping => {
                     println!("Received UDP PING!!");
@@ -121,6 +120,7 @@ impl Peer {
                 }
                 PeerMessageUdp::Pong => {
                     println!("Received UDP PONG!!");
+                    self.set_udp_pong_ok().await;
                 }
                 PeerMessageUdp::VoiceData(_, _) => {}
             }
@@ -134,6 +134,7 @@ impl Peer {
     }
 
     async fn tcp_write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        println!("Sending TCP to peer: {:?}", self);
         self.inner.write().await.tcp_stream.write(bytes).await
     }
 
@@ -179,18 +180,29 @@ impl Peer {
         self.inner.write().await.server_tx.send(msg).await
     }
 
+    // TODO: Make this return result so that loop can fail on failure
     async fn wait_for_udp_ping(&self) {
         let mut udp_buf = [0u8; 1024];
-        let mut delay = tokio::time::delay_for(tokio::time::Duration::from_millis(500));
+        let mut peer = self.clone();
         loop {
-            tokio::select!(
+            let mut delay = tokio::time::delay_for(tokio::time::Duration::from_millis(500));
+            tokio::select! {
                 _ = &mut delay => {
-                    // try sending again
+                    if let Ok(ping_bytes) = bincode::serialize(&PeerMessageUdp::Ping {}) {
+                        if peer.udp_write(&ping_bytes).await.is_err() {
+                            println!("Error sending  UDP ping");
+                            break;
+                        }
+                        println!("Sending UDP Ping");
+                    }
                 },
                 udp_read = self.udp_read(&mut udp_buf) => {
-                    // See if it's a ping or a pong
+                    println!("Read UDP...");
+                    if peer.handle_udp_read(udp_read, &udp_buf).await.is_ok() && self.is_udp_pong_ok().await {
+                        break;
+                    }
                 }
-            )
+            };
         }
     }
 
@@ -199,23 +211,28 @@ impl Peer {
         let mut udp_buf = [0u8; 1024];
         let mut tcp_buf = [0u8; 1024];
         tokio::spawn(async move {
-            // TODO: Set up a loop that just keeps sending Ping until a Pong is received
             if let Ok(ping_bytes) = bincode::serialize(&PeerMessageUdp::Ping {}) {
                 if peer.udp_write(&ping_bytes).await.is_err() {
                     println!("Error sending  UDP ping");
                     return;
                 }
             }
-            println!("Starting peer poll loop...");
+            // TODO: Check result for failure here
+            peer.wait_for_udp_ping().await;
+            println!("Starting peer poll loop... {:?}", peer);
             loop {
+                println!("Inside loop...");
                 tokio::select! {
-                    udp_read = peer.udp_read(&mut udp_buf) => {
-                        if peer.handle_udp_read(udp_read, &udp_buf).await.is_err() {break;}
-                    },
+                    // udp_read = peer.udp_read(&mut udp_buf) => {
+                    //     println!("UDP came in to peer");
+                    //     if peer.handle_udp_read(udp_read, &udp_buf).await.is_err() {break;}
+                    // },
                     tcp_read = peer.tcp_read(&mut tcp_buf) => {
+                        println!("TCP came in to peer");
                         if peer.handle_tcp_read(tcp_read, &tcp_buf).await.is_err() {break;}
                     },
                     recv_result = peer.server_recv() => {
+                        println!("Broadcast came in to peer");
                         match recv_result {
                             Ok(msg) => {
                                 println!("Peer received broadcast: {:?}", msg);
@@ -223,9 +240,13 @@ impl Peer {
                                     Message::_Connect(_) => {}
                                     Message::Disconnect(_) => {}
                                     Message::TextChat(sender, text) => {
+                                        if sender == peer.info.id {
+                                            println!("Refusing to send message back to myself");
+                                            continue;
+                                        }
                                         let peer_message = PeerMessageTcp::ChatEvent(sender, text);
                                         if let Ok(bytes) = bincode::serialize(&peer_message) {
-                                            if sender != peer.info.id && peer.tcp_write(&bytes).await.is_err() {
+                                            if peer.tcp_write(&bytes).await.is_err() {
                                                 println!("Error sending text chat");
                                                 break;
                                             }
@@ -243,7 +264,7 @@ impl Peer {
                             Err(_e) => {},
                         }
                     },
-                }
+                };
             }
             print!("Peer disconnecting {}:", peer.info.id);
 
@@ -267,4 +288,25 @@ enum PeerMessageUdp {
     Ping,
     Pong,
     VoiceData(Uuid, Vec<u8>),
+}
+
+impl PeerMessageUdp {
+    fn new_from_read(read: io::Result<usize>, bytes: &[u8]) -> Result<Self, ()> {
+        let count = match read {
+            Ok(c) => c,
+            Err(e) => {
+                println!("Error reading TCP: {}", e);
+                return Err(());
+            }
+        };
+        if count < 1 {
+            return Err(());
+        }
+
+        if let Ok(message) = bincode::deserialize::<PeerMessageUdp>(&bytes[..count]) {
+            return Ok(message);
+        }
+
+        Err(())
+    }
 }

@@ -67,22 +67,35 @@ impl NetworkController {
 
     async fn handle_message(&mut self, msg: Message) {
         println!("Handling message: {:?}", msg);
+        println!(
+            "Number of receivers: {}",
+            self.inner.read().await.broadcast_tx.receiver_count()
+        );
         // TODO: do we need to do any processing of the message?
-        match msg {
-            Message::_Connect(_) => {}
-            Message::Disconnect(_) => {}
-            Message::TextChat(sender, _) => {
-                if sender == self.get_local_id().await {
-                    return;
-                }
-            }
-            Message::_VoiceChat(_, _) => {}
-        }
+        // match msg {
+        //     Message::_Connect(_) => {}
+        //     Message::Disconnect(_) => {}
+        //     Message::TextChat(sender, _) => {
+        //         if sender == self.get_local_id().await {
+        //             return;
+        //         }
+        //     }
+        //     Message::_VoiceChat(_, _) => {}
+        // }
 
         // Rebroadcast all messages (for now) to all listeners
-        if self.inner.read().await.broadcast_tx.send(msg).is_err() {
+        if self
+            .inner
+            .read()
+            .await
+            .broadcast_tx
+            .send(msg.clone())
+            .is_err()
+        {
             // TODO: report error to a proper logger
+            println!("Error broadcasting message from server");
         }
+        println!("Message rebroadcast: {:?}", msg);
     }
 
     fn start_mpsc(&self, mut mrx: mpsc::Receiver<Message>) {

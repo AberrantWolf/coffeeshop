@@ -43,9 +43,14 @@ impl ChatView {
                 loop {
                     match receiver.recv().await {
                         Ok(msg) => match msg {
-                            Message::TextChat(_sender, text) => {
+                            Message::TextChat(sender, text) => {
                                 // TODO: check sender and prepend username or something
-                                cv.get_text_content().append(format!("{}\n", text));
+                                cv.get_text_content()
+                                    .append(format!("{}: {}\n", sender, text));
+                            }
+                            Message::Disconnect(sender) => {
+                                cv.get_text_content()
+                                    .append(format!("{} disconnected...\n", sender));
                             }
                             _ => unimplemented!(),
                         },
@@ -68,7 +73,7 @@ impl ChatView {
                         .on_submit_mut(move |s, _text| {
                             let net = net.clone();
                             s.call_on_name("message_text_edit", move |view: &mut EditView| {
-                                println!("Sending!");
+                                // println!("Sending!");
                                 let text = view.get_content().to_string();
                                 view.set_content("");
                                 net.send_text_message(text);
@@ -82,7 +87,7 @@ impl ChatView {
                 Button::new("Send", move |s| {
                     let net = net.clone();
                     s.call_on_name("message_text_edit", move |view: &mut EditView| {
-                        println!("Sending!");
+                        // println!("Sending!");
                         let text = view.get_content().to_string();
                         view.set_content("");
                         net.send_text_message(text);
