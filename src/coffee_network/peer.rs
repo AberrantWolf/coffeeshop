@@ -15,19 +15,51 @@ struct PeerInfo {
     udp_port: u16,
 }
 
-#[derive(Debug)]
-struct PeerPrivate {
-    tcp_stream: TcpStream,
-    udp_socket: UdpSocket,
-    udp_pong_ok: bool,
-    broadcast_rx: broadcast::Receiver<Message>,
-    server_tx: mpsc::Sender<Message>,
-}
+// #[derive(Debug)]
+// struct PeerPrivate {
+//     tcp_stream: TcpStream,
+//     udp_socket: UdpSocket,
+//     broadcast_rx: broadcast::Receiver<Message>,
+//     server_tx: mpsc::Sender<Message>,
+//     udp_pong_ok: bool,
+// }
+
+// impl PeerPrivate {
+//     async fn server_recv(&mut self) -> Result<Message, broadcast::RecvError> {
+//         self.broadcast_rx.recv().await
+//     }
+
+//     async fn server_send(&mut self, msg: Message) -> Result<(), mpsc::error::SendError<Message>> {
+//         self.server_tx.send(msg).await
+//     }
+
+//     async fn tcp_read(&mut self, bytes: &mut [u8]) -> io::Result<usize> {
+//         self.tcp_stream.read(bytes).await
+//     }
+
+//     async fn tcp_write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+//         println!("Sending TCP to peer: {:?}", self);
+//         self.tcp_stream.write(bytes).await
+//     }
+
+//     async fn udp_read(&mut self, bytes: &mut [u8]) -> io::Result<usize> {
+//         self.udp_socket.recv(bytes).await
+//     }
+
+//     async fn udp_write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+//         self.udp_socket.send(bytes).await
+//     }
+// }
 
 #[derive(Clone, Debug)]
 pub struct Peer {
     info: PeerInfo,
-    inner: Arc<RwLock<PeerPrivate>>,
+    // inner: Arc<RwLock<PeerPrivate>>,
+    tcp_stream: Arc<RwLock<TcpStream>>,
+    udp_socket: Arc<RwLock<UdpSocket>>,
+    broadcast_rx: Arc<RwLock<broadcast::Receiver<Message>>>,
+    server_tx: Arc<RwLock<mpsc::Sender<Message>>>,
+    udp_pong_ok: Arc<RwLock<bool>>,
 }
 
 impl Peer {
@@ -76,13 +108,13 @@ impl Peer {
         let broadcast_rx = net.get_broadcast_receiver().await;
         let peer = Peer {
             info,
-            inner: Arc::new(RwLock::new(PeerPrivate {
-                tcp_stream,
-                udp_socket,
-                udp_pong_ok: false,
-                broadcast_rx,
-                server_tx,
-            })),
+            // inner: Arc::new(RwLock::new(PeerPrivate {
+            tcp_stream: Arc::new(RwLock::new(tcp_stream)),
+            udp_socket: Arc::new(RwLock::new(udp_socket)),
+            udp_pong_ok: Arc::new(RwLock::new(false)),
+            broadcast_rx: Arc::new(RwLock::new(broadcast_rx)),
+            server_tx: Arc::new(RwLock::new(server_tx)),
+            // })),
         };
         peer.start_polling();
 
@@ -91,19 +123,19 @@ impl Peer {
 
     // UDP fns
     async fn is_udp_pong_ok(&self) -> bool {
-        self.inner.read().await.udp_pong_ok
+        *self.udp_pong_ok.read().await
     }
 
     async fn set_udp_pong_ok(&mut self) {
-        self.inner.write().await.udp_pong_ok = true
+        *self.udp_pong_ok.write().await = true
     }
 
     async fn udp_read(&self, bytes: &mut [u8]) -> io::Result<usize> {
-        self.inner.write().await.udp_socket.recv(bytes).await
+        self.udp_socket.write().await.recv(bytes).await
     }
 
     async fn udp_write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-        self.inner.write().await.udp_socket.send(bytes).await
+        self.udp_socket.write().await.send(bytes).await
     }
 
     async fn handle_udp_read(&mut self, read: io::Result<usize>, bytes: &[u8]) -> Result<(), ()> {
@@ -130,12 +162,12 @@ impl Peer {
 
     // TCP fns
     async fn tcp_read(&self, bytes: &mut [u8]) -> io::Result<usize> {
-        self.inner.write().await.tcp_stream.read(bytes).await
+        self.tcp_stream.write().await.read(bytes).await
     }
 
     async fn tcp_write(&mut self, bytes: &[u8]) -> io::Result<usize> {
         println!("Sending TCP to peer: {:?}", self);
-        self.inner.write().await.tcp_stream.write(bytes).await
+        self.tcp_stream.write().await.write(bytes).await
     }
 
     async fn handle_tcp_read(&mut self, read: io::Result<usize>, bytes: &[u8]) -> Result<(), ()> {
@@ -173,11 +205,11 @@ impl Peer {
     }
 
     async fn server_recv(&self) -> Result<Message, broadcast::RecvError> {
-        self.inner.write().await.broadcast_rx.recv().await
+        self.broadcast_rx.write().await.recv().await
     }
 
     async fn server_send(&mut self, msg: Message) -> Result<(), mpsc::error::SendError<Message>> {
-        self.inner.write().await.server_tx.send(msg).await
+        self.server_tx.write().await.send(msg).await
     }
 
     // TODO: Make this return result so that loop can fail on failure
@@ -221,12 +253,11 @@ impl Peer {
             peer.wait_for_udp_ping().await;
             println!("Starting peer poll loop... {:?}", peer);
             loop {
-                println!("Inside loop...");
                 tokio::select! {
-                    // udp_read = peer.udp_read(&mut udp_buf) => {
-                    //     println!("UDP came in to peer");
-                    //     if peer.handle_udp_read(udp_read, &udp_buf).await.is_err() {break;}
-                    // },
+                    udp_read = peer.udp_read(&mut udp_buf) => {
+                        println!("UDP came in to peer");
+                        if peer.handle_udp_read(udp_read, &udp_buf).await.is_err() {break;}
+                    },
                     tcp_read = peer.tcp_read(&mut tcp_buf) => {
                         println!("TCP came in to peer");
                         if peer.handle_tcp_read(tcp_read, &tcp_buf).await.is_err() {break;}
