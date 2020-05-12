@@ -196,8 +196,8 @@ fn process_new_peer(mut net: NetworkController, stream: TcpStream) {
     tokio::spawn(async move {
         let peer = match Peer::new(stream, net.clone()).await {
             Ok(peer) => peer,
-            Err(_e) => {
-                // TODO: Log e somewhere
+            Err(e) => {
+                println!("Error creating new peer: {}", e);
                 return;
             }
         };

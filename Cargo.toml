@@ -8,8 +8,9 @@ edition = "2018"
 
 [dependencies]
 bincode = "1.2"
+cpal = { git = "https://github.com/RustAudio/cpal" }
 serde = "^1.0.63"
-sfml = "*"
+# sfml = "*"
 structopt = "0.3"
 tokio = { version = "0.2", features = ["full"] }
 uuid = { version = "0.8", features = ["serde", "v4"]}

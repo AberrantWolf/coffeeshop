@@ -15,46 +15,9 @@ struct PeerInfo {
     udp_port: u16,
 }
 
-// #[derive(Debug)]
-// struct PeerPrivate {
-//     tcp_stream: TcpStream,
-//     udp_socket: UdpSocket,
-//     broadcast_rx: broadcast::Receiver<Message>,
-//     server_tx: mpsc::Sender<Message>,
-//     udp_pong_ok: bool,
-// }
-
-// impl PeerPrivate {
-//     async fn server_recv(&mut self) -> Result<Message, broadcast::RecvError> {
-//         self.broadcast_rx.recv().await
-//     }
-
-//     async fn server_send(&mut self, msg: Message) -> Result<(), mpsc::error::SendError<Message>> {
-//         self.server_tx.send(msg).await
-//     }
-
-//     async fn tcp_read(&mut self, bytes: &mut [u8]) -> io::Result<usize> {
-//         self.tcp_stream.read(bytes).await
-//     }
-
-//     async fn tcp_write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-//         println!("Sending TCP to peer: {:?}", self);
-//         self.tcp_stream.write(bytes).await
-//     }
-
-//     async fn udp_read(&mut self, bytes: &mut [u8]) -> io::Result<usize> {
-//         self.udp_socket.recv(bytes).await
-//     }
-
-//     async fn udp_write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-//         self.udp_socket.send(bytes).await
-//     }
-// }
-
 #[derive(Clone, Debug)]
 pub struct Peer {
     info: PeerInfo,
-    // inner: Arc<RwLock<PeerPrivate>>,
     tcp_stream: Arc<RwLock<TcpStream>>,
     udp_socket: Arc<RwLock<UdpSocket>>,
     broadcast_rx: Arc<RwLock<broadcast::Receiver<Message>>>,
@@ -108,13 +71,11 @@ impl Peer {
         let broadcast_rx = net.get_broadcast_receiver().await;
         let peer = Peer {
             info,
-            // inner: Arc::new(RwLock::new(PeerPrivate {
             tcp_stream: Arc::new(RwLock::new(tcp_stream)),
             udp_socket: Arc::new(RwLock::new(udp_socket)),
             udp_pong_ok: Arc::new(RwLock::new(false)),
             broadcast_rx: Arc::new(RwLock::new(broadcast_rx)),
             server_tx: Arc::new(RwLock::new(server_tx)),
-            // })),
         };
         peer.start_polling();
 
