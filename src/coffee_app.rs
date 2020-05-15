@@ -19,4 +19,8 @@ impl CoffeeAppContext {
     pub fn get_net_controller(&self) -> &NetworkController {
         &self.net_controller
     }
+
+    pub fn get_audio_controller(&self) -> &AudioController {
+        &self.audio_controller
+    }
 }

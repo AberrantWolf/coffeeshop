@@ -9,6 +9,8 @@ edition = "2018"
 [dependencies]
 bincode = "1.2"
 cpal = { git = "https://github.com/RustAudio/cpal" }
+itertools = "0.9"
+ringbuf = "0.2"
 serde = "^1.0.63"
 # sfml = "*"
 structopt = "0.3"

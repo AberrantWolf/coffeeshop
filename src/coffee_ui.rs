@@ -112,9 +112,24 @@ fn launch_main_view(mut siv: &mut Cursive, coffee_app: CoffeeAppContext) {
             });
         }
 
+        let mut audio_menu = MenuTree::new();
+        {
+            let audio = coffee_app.get_audio_controller().clone();
+            audio_menu.add_leaf("Print Input", move |_s| {
+                println!("Input device: {:?}", audio.get_input_config())
+            });
+        }
+        {
+            let audio = coffee_app.get_audio_controller().clone();
+            audio_menu.add_leaf("Print Output", move |_s| {
+                println!("Output device: {:?}", audio.get_output_config())
+            });
+        }
+
         siv.menubar()
             .add_subtree("File", file_menu)
-            .add_subtree("Network", network_menu);
+            .add_subtree("Network", network_menu)
+            .add_subtree("Audio", audio_menu);
         siv.set_autohide_menu(false);
         siv.add_global_callback(Event::CtrlChar('q'), |s| s.quit());
     }

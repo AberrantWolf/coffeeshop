@@ -3,43 +3,144 @@ pub mod sources;
 pub mod types;
 
 use std::sync::Arc;
-use tokio::sync::RwLock;
+use tokio::sync::{broadcast, mpsc, RwLock};
 
-use cpal::traits::{DeviceTrait, HostTrait};
+use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{Device, Host};
+
+use itertools::Itertools;
+
+use ringbuf::RingBuffer;
 
 #[derive(Clone)]
 pub struct AudioController {
-    inner: Arc<RwLock<AudioController_Inner>>,
+    inner: Arc<std::sync::RwLock<AudioController_Inner>>,
 }
 
-// TODO: Need a process to listen to the input device and stream that to
-// the network host
+#[derive(Clone)]
+pub enum AudioMessage {}
 
 // #[derive(Debug)]
 struct AudioController_Inner {
     host: Host,
-    output_device: Device,
     input_device: Device,
+    input_stream: Box<dyn StreamTrait>,
+    output_device: Device,
+    output_stream: Box<dyn StreamTrait>,
+    broadcast_tx: broadcast::Sender<AudioMessage>,
+    mpsc_tx: mpsc::Sender<AudioMessage>,
 }
 
+// TODO: ALL of this stuff needs to be configurable...
+// Not exclusively, but including:
+// * What input to use
+// * What output to use
+// * How to convert incoming audio to match output format
+// * Buffer size needs to be big enough for formats (44kHz can be smaller than 192kHz)
 impl AudioController {
     pub fn new() -> Self {
         let host = cpal::default_host();
-        let output_device = host
-            .default_output_device()
-            .expect("Failed to find a default output device.");
+
+        // Input
         let input_device = host
             .default_input_device()
             .expect("Failed to find a default input device.");
+        let input_config = input_device
+            .default_input_config()
+            .expect("Error getting default input config");
+        println!("Default input config: {:?}", input_config);
 
-        AudioController {
-            inner: Arc::new(RwLock::new(AudioController_Inner {
+        // Output
+        let output_device = host
+            .default_output_device()
+            .expect("Failed to find a default output device.");
+        let output_config = output_device
+            .default_output_config()
+            .expect("Error getting default output config");
+        println!("Default output config: {:?}", output_config);
+
+        let (btx, _brx) = broadcast::channel::<AudioMessage>(16);
+        let (mtx, mrx) = mpsc::channel::<AudioMessage>(100);
+
+        let input_ring = RingBuffer::<f32>::new(8192);
+        let output_ring = RingBuffer::<f32>::new(32_768);
+
+        let (mut in_producer, mut in_consumer) = input_ring.split();
+
+        // NOTE: Maybe we don't want a ring buffer, but rather we collect
+        // some number of samples and then send a packet for playback?
+        let in_fn = move |data: &[f32], _: &cpal::InputCallbackInfo| {
+            let mono = data
+                .iter()
+                .step_by(2)
+                .interleave(data.iter().step_by(2))
+                .cloned()
+                .collect_vec();
+            let count = in_producer.push_slice(&mono[..]);
+            if count < data.len() {
+                println!("push overrun");
+            }
+        };
+
+        let out_fn = move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
+            let size = in_consumer.pop_slice(data);
+            if size < data.len() {
+                println!("Producer fell behind");
+            }
+        };
+
+        let input_stream = input_device
+            .build_input_stream(&input_config.into(), in_fn, |err: cpal::StreamError| {
+                println!("Recording error: {}", err)
+            })
+            .expect("Error creating input stream");
+
+        let output_stream = output_device
+            .build_output_stream(&output_config.into(), out_fn, |err: cpal::StreamError| {
+                println!("Playing error: {}", err)
+            })
+            .expect("Error creating output stream");
+
+        input_stream.play().expect("Error starting input stream");
+        output_stream.play().expect("Error starting output stream");
+
+        let ac = AudioController {
+            inner: Arc::new(std::sync::RwLock::new(AudioController_Inner {
                 host,
-                output_device,
                 input_device,
+                input_stream: Box::new(input_stream),
+                output_device,
+                output_stream: Box::new(output_stream),
+                broadcast_tx: btx,
+                mpsc_tx: mtx,
             })),
-        }
+        };
+
+        println!("Audio stuff created...");
+
+        // ac.start_mpsc(mrx);
+
+        ac
+    }
+
+    pub fn get_input_config(&self) -> cpal::StreamConfig {
+        self.inner
+            .read()
+            .expect("lock err")
+            .input_device
+            .default_input_config()
+            .expect("Error getting default input config")
+            .into()
+    }
+
+    pub fn get_output_config(&self) -> cpal::StreamConfig {
+        self.inner
+            .read()
+            .expect("lock err")
+            .output_device
+            .default_output_config()
+            .expect("Error getting default input config")
+            .into()
     }
 }
 
