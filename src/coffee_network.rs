@@ -1,5 +1,3 @@
-pub mod ui;
-
 mod peer;
 
 use std::net::SocketAddr;

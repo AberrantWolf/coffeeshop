@@ -2,11 +2,12 @@ pub mod layers;
 pub mod sources;
 pub mod types;
 
-use std::sync::Arc;
-use tokio::sync::{broadcast, mpsc, RwLock};
+use tokio::sync::{broadcast, mpsc};
+type StdRwLock<T> = std::sync::RwLock<T>;
+type StdArc<T> = std::sync::Arc<T>;
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use cpal::{Device, Host};
+use cpal::{Device, Host, Stream};
 
 use itertools::Itertools;
 
@@ -14,7 +15,7 @@ use ringbuf::RingBuffer;
 
 #[derive(Clone)]
 pub struct AudioController {
-    inner: Arc<std::sync::RwLock<AudioController_Inner>>,
+    inner: StdArc<StdRwLock<AudioController_Inner>>,
 }
 
 #[derive(Clone)]
@@ -24,9 +25,9 @@ pub enum AudioMessage {}
 struct AudioController_Inner {
     host: Host,
     input_device: Device,
-    input_stream: Box<dyn StreamTrait>,
+    input_stream: Stream,
     output_device: Device,
-    output_stream: Box<dyn StreamTrait>,
+    output_stream: Stream,
     broadcast_tx: broadcast::Sender<AudioMessage>,
     mpsc_tx: mpsc::Sender<AudioMessage>,
 }
@@ -105,12 +106,12 @@ impl AudioController {
         output_stream.play().expect("Error starting output stream");
 
         let ac = AudioController {
-            inner: Arc::new(std::sync::RwLock::new(AudioController_Inner {
+            inner: StdArc::new(StdRwLock::new(AudioController_Inner {
                 host,
                 input_device,
-                input_stream: Box::new(input_stream),
+                input_stream,
                 output_device,
-                output_stream: Box::new(output_stream),
+                output_stream,
                 broadcast_tx: btx,
                 mpsc_tx: mtx,
             })),
