@@ -1,17 +1,26 @@
-use iced::{Element, Row, Subscription, Text};
+use iced::{Command, Container, Element, Length, Row, Subscription, Text};
 
-#[derive(Debug)]
-enum ChatMessage {}
+#[derive(Debug, Clone, Copy)]
+pub enum ChatMessage {}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ChatView {}
+pub struct ChatUI {}
 
-impl ChatView {
+impl ChatUI {
     pub fn new() -> Self {
-        ChatView {}
+        ChatUI {}
     }
 
-    fn view(&mut self) -> Element<ChatMessage> {
-        Text::new("Chat").into()
+    pub fn update(&mut self, message: ChatMessage) {
+        match message {}
+    }
+
+    pub fn view(&mut self) -> Element<ChatMessage> {
+        Container::new(Text::new("Chat"))
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .center_x()
+            .center_y()
+            .into()
     }
 }

@@ -1,5 +1,6 @@
 mod coffee_app;
 mod coffee_audio;
+mod coffee_chat;
 mod coffee_network;
 mod coffee_ui;
 
