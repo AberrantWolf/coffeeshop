@@ -16,7 +16,7 @@ enum UIView {
     Chat,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 enum CoffeeUIMessage {
     ChangeView(UIView),
     ChatUIMessage(ChatMessage),
@@ -51,7 +51,7 @@ impl Application for CoffeeUI {
     fn update(&mut self, message: CoffeeUIMessage) -> Command<CoffeeUIMessage> {
         match message {
             CoffeeUIMessage::ChangeView(v) => self.current_view = v,
-            CoffeeUIMessage::ChatUIMessage(_cm) => unimplemented!(),
+            CoffeeUIMessage::ChatUIMessage(cm) => self.chat_ui.update(cm, &mut self.context),
         }
         Command::none()
     }
@@ -64,8 +64,6 @@ impl Application for CoffeeUI {
     }
 
     fn view(&mut self) -> Element<CoffeeUIMessage> {
-        // let CoffeeUI { current_view, .. } = self;
-
         let network_radio = Radio::new(
             UIView::Network,
             "Network",
@@ -95,7 +93,10 @@ impl Application for CoffeeUI {
 
         let main_view = match self.current_view {
             UIView::Audio => Text::new("Audio").into(),
-            UIView::Chat => self.chat_ui.view().map(CoffeeUIMessage::ChatUIMessage),
+            UIView::Chat => self
+                .chat_ui
+                .view(&self.context)
+                .map(CoffeeUIMessage::ChatUIMessage),
             UIView::Network => Text::new("Network").into(),
         };
 
@@ -110,7 +111,6 @@ impl Application for CoffeeUI {
             .width(Length::Fill)
             .height(Length::Fill)
             .center_x()
-            // .center_y()
             .into()
     }
 }
