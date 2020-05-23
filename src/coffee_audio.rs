@@ -15,14 +15,14 @@ use ringbuf::RingBuffer;
 
 #[derive(Clone)]
 pub struct AudioController {
-    inner: StdArc<StdRwLock<AudioController_Inner>>,
+    inner: StdArc<StdRwLock<AudioControllerInner>>,
 }
 
 #[derive(Clone)]
 pub enum AudioMessage {}
 
 // #[derive(Debug)]
-struct AudioController_Inner {
+struct AudioControllerInner {
     host: Host,
     input_device: Device,
     input_stream: Stream,
@@ -106,7 +106,7 @@ impl AudioController {
         output_stream.play().expect("Error starting output stream");
 
         let ac = AudioController {
-            inner: StdArc::new(StdRwLock::new(AudioController_Inner {
+            inner: StdArc::new(StdRwLock::new(AudioControllerInner {
                 host,
                 input_device,
                 input_stream,

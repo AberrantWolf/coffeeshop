@@ -1,14 +1,25 @@
+mod chat_recipe;
+
+use chat_recipe::chat_subscription;
+
 use iced::{
     button, text_input, Align, Button, Column, Command, Container, Element, Length, Row,
     Subscription, Text, TextInput,
 };
 
+// use iced_native::futures::StreamExt;
+
 use crate::coffee_app::CoffeeAppContext;
+use crate::coffee_chat::ChatEvent;
+
+use tokio::sync::broadcast;
 
 #[derive(Debug, Clone)]
 pub enum ChatMessage {
     UsernameUpdated(String),
     StartChat,
+    // Event(Instant),
+    Event(ChatEvent),
 }
 
 #[derive(Debug, Clone)]
@@ -18,7 +29,9 @@ pub enum ChatUI {
         username_value: String,
         start_button_state: button::State,
     },
-    Running {},
+    Running {
+        broadcast_tx: broadcast::Sender<ChatEvent>,
+    },
 }
 
 impl ChatUI {
@@ -39,10 +52,22 @@ impl ChatUI {
                 ChatMessage::UsernameUpdated(name) => *username_value = name,
                 ChatMessage::StartChat => {
                     ctx.start_chat(username_value.clone());
-                    *self = ChatUI::Running {}
+                    *self = ChatUI::Running {
+                        broadcast_tx: ctx.chat().as_ref().unwrap().get_sender(),
+                    }
                 }
+                ChatMessage::Event(_) => {}
             },
-            ChatUI::Running {} => {}
+            ChatUI::Running { .. } => {}
+        }
+    }
+
+    pub fn subscription(&self) -> Subscription<ChatMessage> {
+        match self {
+            ChatUI::Startup { .. } => Subscription::none(),
+            ChatUI::Running {
+                ref broadcast_tx, ..
+            } => chat_subscription(&broadcast_tx),
         }
     }
 

@@ -1,3 +1,5 @@
+#![warn(clippy::all)]
+
 mod coffee_app;
 mod coffee_audio;
 mod coffee_chat;
@@ -9,6 +11,7 @@ mod coffee_ui;
 // use coffee_audio::layers::{PassthroughLayer, SwapLRLayer};
 // use coffee_audio::sources::{FileSource, FilteredSource};
 
+use coffee_ui::start_ui;
 use std::error::Error;
 
 #[tokio::main]
@@ -21,7 +24,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // that purpose. In the future, it would be nice to construct the app
     // context separately and feed it into the UI instead, but that's
     // more work on that code than I'm wanting to put in right now.
-    coffee_ui::start_ui();
+    start_ui();
 
     // Show the default audio input device so we know we have something, at least
     // let default_audio_in_device = sfml::audio::capture::default_device();

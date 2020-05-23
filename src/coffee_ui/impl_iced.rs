@@ -57,10 +57,14 @@ impl Application for CoffeeUI {
     }
 
     fn subscription(&self) -> Subscription<CoffeeUIMessage> {
-        // TODO: Create a subscription for chat messages that listens on
-        // the broadcast channel for them to come in and sends chat message
-        // update enums...
-        Subscription::none()
+        let mut all_subs = vec![];
+        all_subs.push(
+            self.chat_ui
+                .subscription()
+                .map(CoffeeUIMessage::ChatUIMessage),
+        );
+
+        Subscription::batch(all_subs)
     }
 
     fn view(&mut self) -> Element<CoffeeUIMessage> {

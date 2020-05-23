@@ -38,6 +38,10 @@ impl CoffeeAppContext {
         }
     }
 
+    pub fn chat(&self) -> &Option<ChatController> {
+        &self.chat_controller
+    }
+
     pub fn _get_net_controller(&self) -> Result<&NetworkController, &str> {
         if let Some(con) = &self.net_controller {
             Ok(&con)
