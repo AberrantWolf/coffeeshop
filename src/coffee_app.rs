@@ -4,9 +4,8 @@ use crate::coffee_network::NetworkController;
 
 use uuid::Uuid;
 
-// #[derive(Clone)]
 pub struct CoffeeAppContext {
-    local_id: Uuid,
+    uuid: Uuid,
     net_controller: Option<NetworkController>,
     chat_controller: Option<ChatController>,
     audio_controller: Option<AudioController>,
@@ -15,7 +14,7 @@ pub struct CoffeeAppContext {
 impl CoffeeAppContext {
     pub fn new() -> Self {
         CoffeeAppContext {
-            local_id: Uuid::new_v4(),
+            uuid: Uuid::new_v4(),
             net_controller: Option::None,
             chat_controller: Option::None,
             audio_controller: Option::None,
@@ -23,17 +22,17 @@ impl CoffeeAppContext {
     }
 
     pub fn start_chat(&mut self, username: String) {
-        self.chat_controller = Some(ChatController::new(self.local_id, username));
+        self.chat_controller = Some(ChatController::new(self.uuid, username));
     }
 
     pub fn _construct(port_num: u16, username: String) -> Self {
+        let uuid = Uuid::new_v4();
         let net_controller =
-            NetworkController::new_with_port_and_username(port_num, username.clone());
-        let local_id = Uuid::new_v4();
+            NetworkController::new_with_port_and_username(port_num, username.clone(), uuid);
         CoffeeAppContext {
-            local_id,
+            uuid,
             net_controller: Some(net_controller),
-            chat_controller: Some(ChatController::new(local_id, username)),
+            chat_controller: Some(ChatController::new(uuid, username)),
             audio_controller: Some(AudioController::new()),
         }
     }

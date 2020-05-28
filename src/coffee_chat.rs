@@ -13,16 +13,16 @@ pub enum ChatEvent {
 
 #[derive(Clone)]
 pub struct ChatController {
-    local_id: Uuid,
+    uuid: Uuid,
     brodacast_tx: broadcast::Sender<ChatEvent>,
     username: String,
 }
 
 impl ChatController {
-    pub fn new(local_id: Uuid, username: String) -> Self {
+    pub fn new(uuid: Uuid, username: String) -> Self {
         let (brodacast_tx, _) = broadcast::channel::<ChatEvent>(16);
         ChatController {
-            local_id,
+            uuid,
             brodacast_tx,
             username,
         }

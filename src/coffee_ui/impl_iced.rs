@@ -1,4 +1,5 @@
 mod chat_view;
+mod network_view;
 
 use iced::{
     executor, Align, Application, Column, Command, Container, Element, Length, Radio, Row,
@@ -8,6 +9,7 @@ use iced::{
 use crate::coffee_app::CoffeeAppContext;
 
 use chat_view::{ChatMessage, ChatUI};
+use network_view::{NetUI, NetUIMessage};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum UIView {
@@ -20,12 +22,14 @@ enum UIView {
 enum CoffeeUIMessage {
     ChangeView(UIView),
     ChatUIMessage(ChatMessage),
+    NetUIMessage(NetUIMessage),
 }
 
 struct CoffeeUI {
     context: CoffeeAppContext,
     current_view: UIView,
     chat_ui: ChatUI,
+    net_ui: NetUI,
 }
 
 impl Application for CoffeeUI {
@@ -39,6 +43,7 @@ impl Application for CoffeeUI {
                 context: CoffeeAppContext::new(),
                 current_view: UIView::Network,
                 chat_ui: ChatUI::new(),
+                net_ui: NetUI::new(),
             },
             Command::none(),
         )
@@ -51,7 +56,12 @@ impl Application for CoffeeUI {
     fn update(&mut self, message: CoffeeUIMessage) -> Command<CoffeeUIMessage> {
         match message {
             CoffeeUIMessage::ChangeView(v) => self.current_view = v,
-            CoffeeUIMessage::ChatUIMessage(cm) => self.chat_ui.update(cm, &mut self.context),
+            CoffeeUIMessage::ChatUIMessage(message) => {
+                self.chat_ui.update(message, &mut self.context)
+            }
+            CoffeeUIMessage::NetUIMessage(message) => {
+                self.net_ui.update(message, &mut self.context)
+            }
         }
         Command::none()
     }
@@ -62,6 +72,11 @@ impl Application for CoffeeUI {
             self.chat_ui
                 .subscription()
                 .map(CoffeeUIMessage::ChatUIMessage),
+        );
+        all_subs.push(
+            self.net_ui
+                .subscription()
+                .map(CoffeeUIMessage::NetUIMessage),
         );
 
         Subscription::batch(all_subs)
@@ -101,7 +116,10 @@ impl Application for CoffeeUI {
                 .chat_ui
                 .view(&self.context)
                 .map(CoffeeUIMessage::ChatUIMessage),
-            UIView::Network => Text::new("Network").into(),
+            UIView::Network => self
+                .net_ui
+                .view(&self.context)
+                .map(CoffeeUIMessage::NetUIMessage),
         };
 
         let content = Column::new()

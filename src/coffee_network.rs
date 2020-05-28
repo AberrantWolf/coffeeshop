@@ -36,13 +36,13 @@ pub struct NetworkController {
 }
 
 impl NetworkController {
-    pub fn new_with_port_and_username(port_num: u16, username: String) -> Self {
+    pub fn new_with_port_and_username(port_num: u16, username: String, uuid: Uuid) -> Self {
         let (btx, _brx) = broadcast::channel::<Message>(16);
         let (mtx, mrx) = mpsc::channel::<Message>(100);
         let state = NetworkController {
             inner: Arc::new(RwLock::new(NetworkControllerPrivate {
                 address: SocketAddr::from(([0, 0, 0, 0], port_num)),
-                local_id: Uuid::new_v4(),
+                local_id: uuid,
                 local_nick: username,
                 broadcast_tx: btx,
                 mpsc_tx: mtx,
